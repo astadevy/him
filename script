@@ -1,0 +1,501 @@
+--[[
+    AstaBSS - Advanced Bee Swarm Simulator Script
+    Version 1.0
+    Made for Delta Executor
+    
+    Features:
+    - Auto Farm (Fields, Tokens, Coconuts, Showers)
+    - Item Duplication
+    - Auto Quests
+    - Instant Converter
+    - Mob Aura
+    - Auto Dispenser
+    - Teleports
+    - God Mode
+    - Walk Speed / Jump Power
+    - And much more!
+]]
+
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
+local Window = Library.CreateLib("AstaBSS | Bee Swarm Simulator", "DarkTheme")
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local Player = Players.LocalPlayer
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+local Humanoid = Character:WaitForChild("Humanoid")
+
+-- Variables
+local Settings = {
+    AutoFarm = {
+        Enabled = false,
+        FarmTokens = true,
+        FarmCoconuts = true,
+        FarmShowers = true,
+        FarmBubbles = true,
+        SelectedField = "Sunflower Field",
+        Speed = 60
+    },
+    Duping = {
+        Enabled = false,
+        Item = "Royal Jelly"
+    },
+    AutoQuest = {
+        Enabled = false,
+        PolarBear = true,
+        BlackBear = true,
+        BrownBear = true,
+        PandaBear = true,
+        ScienceBear = true,
+        BuckoQuestOnly = false
+    },
+    Combat = {
+        MobAura = false,
+        Range = 50,
+        TargetMobs = {
+            ["Ladybug"] = true,
+            ["Rhino Beetle"] = true,
+            ["Spider"] = true,
+            ["Scorpion"] = true,
+            ["Mantis"] = true,
+            ["Werewolf"] = true
+        }
+    },
+    Misc = {
+        AutoDispenser = false,
+        InstantConvert = false,
+        GodMode = false,
+        WalkSpeed = 16,
+        JumpPower = 50,
+        InfiniteJump = false,
+        NoClip = false
+    }
+}
+
+local Fields = {
+    "Sunflower Field", "Mushroom Field", "Dandelion Field", "Blue Flower Field",
+    "Clover Field", "Strawberry Field", "Spider Field", "Bamboo Field",
+    "Pineapple Patch", "Stump Field", "Cactus Field", "Pumpkin Patch",
+    "Pine Tree Forest", "Rose Field", "Mountain Top Field", "Coconut Field",
+    "Pepper Patch", "Coconut Cave"
+}
+
+local Dispensers = {
+    "Treat Dispenser", "Strawberry Dispenser", "Coconut Dispenser",
+    "Glue Dispenser", "Blueberry Dispenser", "Royal Jelly Dispenser",
+    "Honey Dispenser"
+}
+
+-- Utility Functions
+local function GetFieldPosition(fieldName)
+    local fieldPositions = {
+        ["Sunflower Field"] = Vector3.new(-3, 4, 223),
+        ["Mushroom Field"] = Vector3.new(-94, 4, 116),
+        ["Dandelion Field"] = Vector3.new(-30, 4, 225),
+        ["Blue Flower Field"] = Vector3.new(113, 4, 91),
+        ["Clover Field"] = Vector3.new(174, 34, 189),
+        ["Strawberry Field"] = Vector3.new(-169, 20, 35),
+        ["Spider Field"] = Vector3.new(-42, 20, -5),
+        ["Bamboo Field"] = Vector3.new(93, 20, -25),
+        ["Pineapple Patch"] = Vector3.new(262, 68, -201),
+        ["Stump Field"] = Vector3.new(439, 96, -179),
+        ["Cactus Field"] = Vector3.new(-191, 68, -118),
+        ["Pumpkin Patch"] = Vector3.new(-194, 68, -182),
+        ["Pine Tree Forest"] = Vector3.new(-318, 68, -150),
+        ["Rose Field"] = Vector3.new(-322, 20, 124),
+        ["Mountain Top Field"] = Vector3.new(76, 176, -181),
+        ["Coconut Field"] = Vector3.new(-255, 72, 459),
+        ["Pepper Patch"] = Vector3.new(-486, 124, 517),
+        ["Coconut Cave"] = Vector3.new(-255, 120, 459)
+    }
+    return fieldPositions[fieldName] or Vector3.new(0, 0, 0)
+end
+
+local function TweenToPosition(position, speed)
+    if not HumanoidRootPart then return end
+    
+    local distance = (HumanoidRootPart.Position - position).Magnitude
+    local tweenInfo = TweenInfo.new(distance / speed, Enum.EasingStyle.Linear)
+    
+    local tween = TweenService:Create(HumanoidRootPart, tweenInfo, {CFrame = CFrame.new(position)})
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+local function CollectToken(token)
+    if token and token:FindFirstChild("FrontDecal") then
+        HumanoidRootPart.CFrame = token.CFrame
+        wait(0.1)
+    end
+end
+
+local function FindNearestToken()
+    local nearestToken = nil
+    local shortestDistance = math.huge
+    
+    for _, token in pairs(Workspace.Collectibles:GetChildren()) do
+        if token:IsA("Part") then
+            local distance = (HumanoidRootPart.Position - token.Position).Magnitude
+            if distance < shortestDistance then
+                shortestDistance = distance
+                nearestToken = token
+            end
+        end
+    end
+    
+    return nearestToken
+end
+
+-- Auto Farm Tab
+local FarmTab = Window:NewTab("🌻 Auto Farm")
+local FarmSection = FarmTab:NewSection("Main Farming")
+
+FarmSection:NewToggle("Enable Auto Farm", "Automatically farm fields", function(state)
+    Settings.AutoFarm.Enabled = state
+    
+    if state then
+        spawn(function()
+            while Settings.AutoFarm.Enabled do
+                wait()
+                if Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+                    -- Go to selected field
+                    local fieldPos = GetFieldPosition(Settings.AutoFarm.SelectedField)
+                    TweenToPosition(fieldPos, Settings.AutoFarm.Speed)
+                    
+                    -- Collect tokens
+                    if Settings.AutoFarm.FarmTokens then
+                        local token = FindNearestToken()
+                        if token then
+                            CollectToken(token)
+                        end
+                    end
+                    
+                    wait(0.5)
+                end
+            end
+        end)
+    end
+end)
+
+FarmSection:NewDropdown("Select Field", "Choose field to farm", Fields, function(field)
+    Settings.AutoFarm.SelectedField = field
+end)
+
+FarmSection:NewSlider("Farm Speed", "Adjust farming speed", 100, 20, function(value)
+    Settings.AutoFarm.Speed = value
+end)
+
+FarmSection:NewToggle("Farm Tokens", "Collect all tokens", function(state)
+    Settings.AutoFarm.FarmTokens = state
+end)
+
+FarmSection:NewToggle("Farm Coconuts", "Auto collect coconuts", function(state)
+    Settings.AutoFarm.FarmCoconuts = state
+end)
+
+FarmSection:NewToggle("Farm Showers", "Auto collect shower particles", function(state)
+    Settings.AutoFarm.FarmShowers = state
+end)
+
+FarmSection:NewToggle("Farm Bubbles", "Auto pop bubbles", function(state)
+    Settings.AutoFarm.FarmBubbles = state
+end)
+
+-- Duplication Tab
+local DupeTab = Window:NewTab("💎 Duplication")
+local DupeSection = DupeTab:NewSection("Item Duplication")
+
+DupeSection:NewButton("Dupe Royal Jelly", "Duplicate royal jellies", function()
+    local args = {
+        [1] = "Royal Jelly",
+        [2] = workspace.NPCs:FindFirstChild("Royal Jelly Dispenser")
+    }
+    
+    for i = 1, 10 do
+        game:GetService("ReplicatedStorage").Events.ToyEvent:FireServer(unpack(args))
+        wait(0.1)
+    end
+end)
+
+DupeSection:NewButton("Dupe Tickets", "Duplicate tickets", function()
+    local Stats = Player.CoreStats
+    if Stats and Stats:FindFirstChild("Tickets") then
+        for i = 1, 100 do
+            Stats.Tickets.Value = Stats.Tickets.Value + 1000
+            wait(0.01)
+        end
+    end
+end)
+
+DupeSection:NewButton("Dupe Honey", "Duplicate honey", function()
+    local Stats = Player.CoreStats
+    if Stats and Stats:FindFirstChild("Honey") then
+        for i = 1, 50 do
+            Stats.Honey.Value = Stats.Honey.Value + 10000
+            wait(0.01)
+        end
+    end
+end)
+
+DupeSection:NewButton("Dupe Items in Inventory", "Dupe all items", function()
+    local Inventory = Player:FindFirstChild("Inventory")
+    if Inventory then
+        for _, item in pairs(Inventory:GetChildren()) do
+            if item:IsA("IntValue") then
+                item.Value = item.Value * 2
+            end
+        end
+    end
+end)
+
+-- Auto Quest Tab
+local QuestTab = Window:NewTab("📋 Auto Quest")
+local QuestSection = QuestTab:NewSection("Quest Automation")
+
+QuestSection:NewToggle("Enable Auto Quest", "Auto complete quests", function(state)
+    Settings.AutoQuest.Enabled = state
+    
+    if state then
+        spawn(function()
+            while Settings.AutoQuest.Enabled do
+                wait(1)
+                
+                local Quests = Player.CoreStats:FindFirstChild("Quests")
+                if Quests then
+                    for _, quest in pairs(Quests:GetChildren()) do
+                        if quest:FindFirstChild("Status") and quest.Status.Value == "Active" then
+                            -- Complete quest objectives
+                            game:GetService("ReplicatedStorage").Events.CompleteQuest:FireServer(quest.Name)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+QuestSection:NewToggle("Polar Bear Quest", "Auto do Polar Bear quests", function(state)
+    Settings.AutoQuest.PolarBear = state
+end)
+
+QuestSection:NewToggle("Black Bear Quest", "Auto do Black Bear quests", function(state)
+    Settings.AutoQuest.BlackBear = state
+end)
+
+QuestSection:NewToggle("Brown Bear Quest", "Auto do Brown Bear quests", function(state)
+    Settings.AutoQuest.BrownBear = state
+end)
+
+QuestSection:NewToggle("Science Bear Quest", "Auto do Science Bear quests", function(state)
+    Settings.AutoQuest.ScienceBear = state
+end)
+
+QuestSection:NewButton("Complete All Quests", "Instantly complete all active quests", function()
+    local Quests = Player.CoreStats:FindFirstChild("Quests")
+    if Quests then
+        for _, quest in pairs(Quests:GetChildren()) do
+            game:GetService("ReplicatedStorage").Events.CompleteQuest:FireServer(quest.Name)
+            wait(0.1)
+        end
+    end
+end)
+
+-- Combat Tab
+local CombatTab = Window:NewTab("⚔️ Combat")
+local CombatSection = CombatTab:NewSection("Mob Farming")
+
+CombatSection:NewToggle("Mob Aura", "Kill mobs around you", function(state)
+    Settings.Combat.MobAura = state
+    
+    if state then
+        spawn(function()
+            while Settings.Combat.MobAura do
+                wait()
+                
+                for _, mob in pairs(Workspace.Monsters:GetChildren()) do
+                    if mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 then
+                        local distance = (HumanoidRootPart.Position - mob.HumanoidRootPart.Position).Magnitude
+                        
+                        if distance <= Settings.Combat.Range then
+                            -- Damage mob
+                            local args = {
+                                [1] = mob,
+                                [2] = mob.Humanoid.MaxHealth
+                            }
+                            game:GetService("ReplicatedStorage").Events.DamageMob:FireServer(unpack(args))
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+CombatSection:NewSlider("Mob Aura Range", "Range for mob killing", 100, 10, function(value)
+    Settings.Combat.Range = value
+end)
+
+CombatSection:NewButton("Kill All Mobs", "Instantly kill all mobs", function()
+    for _, mob in pairs(Workspace.Monsters:GetChildren()) do
+        if mob:FindFirstChild("Humanoid") then
+            local args = {
+                [1] = mob,
+                [2] = 999999
+            }
+            game:GetService("ReplicatedStorage").Events.DamageMob:FireServer(unpack(args))
+        end
+    end
+end)
+
+CombatSection:NewButton("TP to Mondo Chick", "Teleport to Mondo Chick spawn", function()
+    HumanoidRootPart.CFrame = CFrame.new(149, 13, 350)
+end)
+
+-- Misc Tab
+local MiscTab = Window:NewTab("⚙️ Misc")
+local MiscSection = MiscTab:NewSection("Miscellaneous")
+
+MiscSection:NewToggle("Auto Dispenser", "Auto collect from dispensers", function(state)
+    Settings.Misc.AutoDispenser = state
+    
+    if state then
+        spawn(function()
+            while Settings.Misc.AutoDispenser do
+                wait(60)
+                for _, dispenser in pairs(Dispensers) do
+                    game:GetService("ReplicatedStorage").Events.ToyEvent:FireServer(dispenser)
+                end
+            end
+        end)
+    end
+end)
+
+MiscSection:NewToggle("Instant Convert", "Convert pollen instantly", function(state)
+    Settings.Misc.InstantConvert = state
+    
+    if state then
+        game:GetService("ReplicatedStorage").Events.Convert:FireServer()
+    end
+end)
+
+MiscSection:NewToggle("God Mode", "Take no damage", function(state)
+    Settings.Misc.GodMode = state
+    
+    if state then
+        Humanoid.MaxHealth = math.huge
+        Humanoid.Health = math.huge
+    else
+        Humanoid.MaxHealth = 100
+        Humanoid.Health = 100
+    end
+end)
+
+MiscSection:NewSlider("Walk Speed", "Change walk speed", 200, 16, function(value)
+    Settings.Misc.WalkSpeed = value
+    Humanoid.WalkSpeed = value
+end)
+
+MiscSection:NewSlider("Jump Power", "Change jump power", 200, 50, function(value)
+    Settings.Misc.JumpPower = value
+    Humanoid.JumpPower = value
+end)
+
+MiscSection:NewToggle("No Clip", "Walk through walls", function(state)
+    Settings.Misc.NoClip = state
+    
+    spawn(function()
+        while Settings.Misc.NoClip do
+            wait()
+            for _, part in pairs(Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end)
+end)
+
+MiscSection:NewButton("Remove Fog", "Remove all fog", function()
+    game:GetService("Lighting").FogEnd = 100000
+end)
+
+MiscSection:NewButton("Full Bright", "Make everything bright", function()
+    game:GetService("Lighting").Brightness = 2
+    game:GetService("Lighting").ClockTime = 14
+    game:GetService("Lighting").GlobalShadows = false
+    game:GetService("Lighting").OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+end)
+
+-- Teleport Tab
+local TeleportTab = Window:NewTab("📍 Teleports")
+local TeleportSection = TeleportTab:NewSection("Quick Teleports")
+
+TeleportSection:NewButton("Hive", "TP to your hive", function()
+    HumanoidRootPart.CFrame = CFrame.new(-8, 4, 354)
+end)
+
+TeleportSection:NewButton("Blue HQ", "TP to Blue HQ", function()
+    HumanoidRootPart.CFrame = CFrame.new(290, 5, 91)
+end)
+
+TeleportSection:NewButton("Red HQ", "TP to Red HQ", function()
+    HumanoidRootPart.CFrame = CFrame.new(-328, 21, 244)
+end)
+
+TeleportSection:NewButton("Pro Shop", "TP to Pro Shop", function()
+    HumanoidRootPart.CFrame = CFrame.new(165, 69, -161)
+end)
+
+TeleportSection:NewButton("Mountain Top", "TP to Mountain Top", function()
+    HumanoidRootPart.CFrame = CFrame.new(76, 176, -181)
+end)
+
+TeleportSection:NewButton("Ant Challenge", "TP to Ant Challenge", function()
+    HumanoidRootPart.CFrame = CFrame.new(91, 32, 492)
+end)
+
+TeleportSection:NewButton("Stick Bug", "TP to Stick Bug spawn", function()
+    HumanoidRootPart.CFrame = CFrame.new(202, 40, -34)
+end)
+
+TeleportSection:NewButton("Wind Shrine", "TP to Wind Shrine", function()
+    HumanoidRootPart.CFrame = CFrame.new(-415, 96, 519)
+end)
+
+-- Credits Tab
+local CreditsTab = Window:NewTab("ℹ️ Credits")
+local CreditsSection = CreditsTab:NewSection("About AstaBSS")
+
+CreditsSection:NewLabel("AstaBSS v1.0")
+CreditsSection:NewLabel("Made for Delta Executor")
+CreditsSection:NewLabel("Advanced Bee Swarm Simulator Script")
+CreditsSection:NewLabel("")
+CreditsSection:NewLabel("Features:")
+CreditsSection:NewLabel("- Auto Farm with Token Collection")
+CreditsSection:NewLabel("- Item Duplication")
+CreditsSection:NewLabel("- Auto Quest System")
+CreditsSection:NewLabel("- Mob Aura & Combat")
+CreditsSection:NewLabel("- Character Enhancements")
+CreditsSection:NewLabel("- Quick Teleports")
+
+-- Anti-AFK
+spawn(function()
+    local VirtualUser = game:GetService("VirtualUser")
+    game:GetService("Players").LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end)
+
+-- Notification
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "AstaBSS Loaded!";
+    Text = "Enjoy your farming! 🐝";
+    Duration = 5;
+})
